@@ -14,6 +14,7 @@
 | Объём | исходные файлы 134 МБ; 95 434 числа из таблиц; 1 912 точек ключевых рядов |
 | Форматы | исходные doc, docx, pdf, rar; база DuckDB; таблицы Parquet |
 | Дата загрузки | 03.11.2026 |
+| Карточка набора | [repository.nsedc.ru/dataset/ru-mintrans-bulletins](https://repository.nsedc.ru/dataset/ru-mintrans-bulletins) |
 
 ## Содержание бюллетеня
 
