@@ -1,0 +1,24 @@
+# окружения и кеши
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.DS_Store
+
+# данные: в git — исходные файлы выпусков, каталог и Parquet-выгрузка базы;
+# остальное пересобирается командами extract, normalize, build-db
+data/*
+!data/files/
+!data/catalog/
+data/catalog/*
+!data/catalog/documents.jsonl
+!data/catalog/files.jsonl
+!data/catalog/downloads.jsonl
+!data/parquet/
+*.tmp
+*.part
+# база DuckDB (около 8 МБ) — в релизе и пересобирается командой `make build`
+*.duckdb
+*.duckdb.wal
