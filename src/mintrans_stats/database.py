@@ -6,13 +6,15 @@
 выгружается ещё и в Parquet (``data/parquet/{таблица}.parquet``): из этих файлов
 ``open_parquet`` поднимает ту же базу в памяти, без сборки.
 
-Таблицы и представления описаны в ``docs/database.md``; описания есть и в самой базе
-(``COMMENT ON``): ``SELECT table_name, comment FROM duckdb_tables()``.
+Таблицы и представления описаны в ``docs/database.md``, их SQL — в ``sql/schema.sql``,
+``sql/views.sql``, ``sql/comments.sql``; описания есть и в самой базе (``COMMENT ON``):
+``SELECT table_name, comment FROM duckdb_tables()``.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 from pathlib import Path
 
@@ -28,11 +30,18 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_DB_NAME = "bulletin.duckdb"
 PARQUET_DIR_NAME = "parquet"
-# Таблицы в порядке загрузки (сначала те, на которые ссылаются другие)
-TABLES = (
-    "issues", "files", "source_tables", "indicators", "transport_modes", "table_values",
-    "core_observations", "core_series", "checks", "build_info",
-)  # fmt: skip
+# Схема, представления и описания — в файлах sql/: их же использует архив Parquet без пакета
+SQL_DIR = Path(__file__).parent / "sql"
+# Файл базы читается DuckDB 1.0 и новее, а не только той версией, что его записала
+STORAGE_COMPATIBILITY = "v1.0.0"
+
+
+def read_sql(name: str) -> str:
+    return (SQL_DIR / name).read_text(encoding="utf-8")
+
+
+# Таблицы в порядке загрузки (как в schema.sql: сначала те, на которые ссылаются другие)
+TABLES = tuple(re.findall(r"^CREATE TABLE (\w+)", read_sql("schema.sql"), flags=re.MULTILINE))
 
 INDICATORS = [
     ("passengers_carried", "Перевезено пассажиров", "млн чел."),
@@ -59,190 +68,14 @@ TRANSPORT_MODES = [
     ("pipeline", "Трубопроводный", "other"),
 ]
 
-TABLES_SQL = """
-CREATE TABLE issues (
-    document_id   INTEGER PRIMARY KEY,
-    title         VARCHAR NOT NULL,
-    url           VARCHAR NOT NULL,
-    published_at  DATE,
-    listed_date   DATE,
-    report_period VARCHAR NOT NULL,
-    report_year   INTEGER NOT NULL,
-    month_from    INTEGER NOT NULL,
-    month_to      INTEGER NOT NULL,
-    in_section    BOOLEAN NOT NULL,
-    files_count   INTEGER
-);
-CREATE TABLE files (
-    file_id           INTEGER PRIMARY KEY,
-    document_id       INTEGER NOT NULL REFERENCES issues (document_id),
-    title             VARCHAR,
-    url               VARCHAR NOT NULL,
-    site_type         VARCHAR,
-    detected_type     VARCHAR,
-    original_filename VARCHAR,
-    size_bytes        BIGINT,
-    sha256            VARCHAR,
-    local_path        VARCHAR,
-    downloaded_at     TIMESTAMP
-);
-CREATE TABLE source_tables (
-    table_id    VARCHAR PRIMARY KEY,
-    document_id INTEGER NOT NULL REFERENCES issues (document_id),
-    file_id     INTEGER NOT NULL REFERENCES files (file_id),
-    member      VARCHAR,
-    location    VARCHAR,
-    caption     VARCHAR,
-    n_rows      INTEGER,
-    n_cols      INTEGER,
-    csv_path    VARCHAR
-);
-CREATE TABLE indicators (
-    indicator VARCHAR PRIMARY KEY,
-    name      VARCHAR NOT NULL,
-    unit      VARCHAR NOT NULL
-);
-CREATE TABLE transport_modes (
-    mode       VARCHAR PRIMARY KEY,
-    name       VARCHAR NOT NULL,
-    mode_group VARCHAR NOT NULL
-);
-CREATE TABLE table_values (
-    document_id     INTEGER NOT NULL,
-    report_period   VARCHAR NOT NULL,
-    report_year     INTEGER NOT NULL,
-    report_month_to INTEGER NOT NULL,
-    table_id        VARCHAR NOT NULL,
-    location        VARCHAR,
-    caption         VARCHAR,
-    topic           VARCHAR,
-    unit            VARCHAR,
-    row_index       INTEGER NOT NULL,
-    row_label       VARCHAR,
-    row_note        VARCHAR,
-    mode            VARCHAR,
-    col_index       INTEGER NOT NULL,
-    col_header      VARCHAR,
-    col_period      VARCHAR,
-    col_year        INTEGER,
-    col_month_from  INTEGER,
-    col_month_to    INTEGER,
-    measure         VARCHAR NOT NULL,
-    value           DOUBLE,
-    value_raw       VARCHAR,
-    value_note      VARCHAR
-);
-CREATE TABLE core_observations (
-    indicator     VARCHAR NOT NULL,
-    mode          VARCHAR NOT NULL,
-    period        VARCHAR NOT NULL,
-    year          INTEGER NOT NULL,
-    month_from    INTEGER NOT NULL,
-    month_to      INTEGER NOT NULL,
-    value         DOUBLE NOT NULL,
-    unit          VARCHAR,
-    row_label     VARCHAR,
-    document_id   INTEGER NOT NULL,
-    report_period VARCHAR NOT NULL,
-    table_id      VARCHAR NOT NULL,
-    flags         VARCHAR
-);
-CREATE TABLE core_series (
-    indicator     VARCHAR NOT NULL,
-    mode          VARCHAR NOT NULL,
-    period        VARCHAR NOT NULL,
-    year          INTEGER NOT NULL,
-    month_from    INTEGER NOT NULL,
-    month_to      INTEGER NOT NULL,
-    value         DOUBLE NOT NULL,
-    unit          VARCHAR,
-    row_label     VARCHAR,
-    document_id   INTEGER NOT NULL,
-    report_period VARCHAR NOT NULL,
-    table_id      VARCHAR NOT NULL,
-    flags         VARCHAR,
-    PRIMARY KEY (indicator, mode, period)
-);
-CREATE TABLE checks (
-    "check"   VARCHAR NOT NULL,
-    indicator VARCHAR,
-    mode      VARCHAR,
-    period    VARCHAR,
-    table_id  VARCHAR,
-    expected  DOUBLE,
-    actual    DOUBLE,
-    diff_pct  DOUBLE,
-    ok        BOOLEAN NOT NULL
-);
-CREATE TABLE build_info (
-    key   VARCHAR PRIMARY KEY,
-    value VARCHAR
-);
-"""
-
-VIEWS_SQL = """
-CREATE VIEW series AS
-SELECT s.indicator, i.name AS indicator_name, s.mode, m.name AS mode_name, m.mode_group,
-       s.period, s.year, s.month_from, s.month_to, s.value, s.unit, s.row_label, s.flags,
-       s.document_id, s.report_period, s.table_id
-FROM core_series s
-JOIN indicators i USING (indicator)
-JOIN transport_modes m USING (mode);
-
-CREATE VIEW annual_series AS
-SELECT * FROM series WHERE month_from = 1 AND month_to = 12;
-
-CREATE VIEW values_with_source AS
-SELECT v.*, i.title AS issue_title, i.url AS issue_url, t.file_id, f.url AS file_url,
-       f.original_filename
-FROM table_values v
-JOIN issues i USING (document_id)
-JOIN source_tables t USING (table_id)
-JOIN files f ON f.file_id = t.file_id;
-"""
-
-_VIEWS = frozenset({"series", "annual_series", "values_with_source"})
-COMMENTS = {
-    "issues": "Выпуски бюллетеня: один документ сайта — один выпуск за период нарастающим итогом",
-    "issues.report_period": "Период выпуска: 2025-01..09 — январь–сентябрь 2025",
-    "issues.in_section": "Выпуск есть в разделе «Статистика» (иначе найден поиском по сайту)",
-    "files": "Файлы выпусков (doc, docx, pdf, rar), скачанные с сайта",
-    "files.site_type": "Тип файла по карточке документа на сайте",
-    "files.detected_type": "Тип файла по содержимому",
-    "source_tables": "Таблицы, извлечённые из файлов; CSV лежит в data/tables",
-    "source_tables.member": "Файл внутри архива, если таблица из архива",
-    "source_tables.location": "Место таблицы: page N (pdf) или body (docx)",
-    "indicators": "Ключевые показатели: перевозки и обороты пассажиров и грузов",
-    "transport_modes": "Виды транспорта; mode_group: total — итоги, mintrans — отрасли "
-    "Минтранса, other — прочие ведомства",
-    "table_values": "Каждая числовая ячейка каждой таблицы всех выпусков",
-    "table_values.topic": "Ключевой показатель, если таблица сводная по видам транспорта",
-    "table_values.mode": "Вид транспорта по подписи строки",
-    "table_values.measure": "value — значение, percent — столбец «в % к …»",
-    "table_values.col_period": "Период столбца по шапке: 2024, 2025-01..09",
-    "table_values.value_raw": "Текст ячейки как в источнике",
-    "table_values.value_note": "Сноска при числе: 2) или *",
-    "core_observations": "Ключевые показатели из всех выпусков, с повторами одного периода",
-    "core_observations.flags": "unit_suspect — значение в 100+ раз больше медианы ряда",
-    "core_series": "Ключевые ряды без повторов: значение из самого позднего выпуска",
-    "checks": "Проверки: total_vs_sum — итог против суммы видов; revision — пересмотры "
-    "между выпусками; unit_suspect — вероятно другая единица",
-    "build_info": "Сведения о сборке базы",
-    "series": "core_series с названиями показателей и видов транспорта",
-    "annual_series": "Годовые значения ключевых рядов (январь–декабрь)",
-    "values_with_source": "table_values с выпуском, файлом и ссылками на источник",
-}
-
 
 def _quote(text: str) -> str:
     return "'" + text.replace("'", "''") + "'"
 
 
 def _add_views_and_comments(con: duckdb.DuckDBPyConnection) -> None:
-    con.execute(VIEWS_SQL)
-    for name, text in COMMENTS.items():
-        kind = "COLUMN" if "." in name else ("VIEW" if name in _VIEWS else "TABLE")
-        con.execute(f"COMMENT ON {kind} {name} IS {_quote(text)}")
+    con.execute(read_sql("views.sql"))
+    con.execute(read_sql("comments.sql"))
 
 
 def export_parquet(con: duckdb.DuckDBPyConnection, out_dir: Path) -> dict[str, int]:
@@ -264,7 +97,7 @@ def export_parquet(con: duckdb.DuckDBPyConnection, out_dir: Path) -> dict[str, i
 def open_parquet(parquet_dir: Path) -> duckdb.DuckDBPyConnection:
     """База в памяти из Parquet: те же таблицы, представления и описания, что в файле базы."""
     con = duckdb.connect()
-    con.execute(TABLES_SQL)
+    con.execute(read_sql("schema.sql"))
     for table in TABLES:
         path = parquet_dir / f"{table}.parquet"
         if not path.is_file():
@@ -370,9 +203,9 @@ def build_database(
     tmp.unlink(missing_ok=True)
     datasets = settings.data_dir / "datasets"
 
-    con = duckdb.connect(str(tmp))
+    con = duckdb.connect(str(tmp), config={"storage_compatibility_version": STORAGE_COMPATIBILITY})
     try:
-        con.execute(TABLES_SQL)
+        con.execute(read_sql("schema.sql"))
         issues = _issue_rows(settings)
         con.executemany(f"INSERT INTO issues VALUES ({', '.join('?' * 11)})", issues)
         issue_ids = {r[0] for r in issues}

@@ -61,7 +61,8 @@ con.sql("SELECT * FROM annual_series WHERE indicator = 'passenger_turnover' AND 
 
 Подробные примеры с графиками — ключевые ряды, кварталы из нарастающего итога, поиск любого
 показателя в таблицах, происхождение числа, сверки — в тетрадке Jupyter
-[docs/examples.ipynb](docs/examples.ipynb). Сборка базы ей не нужна:
+[docs/examples.ipynb](docs/examples.ipynb). Сборка базы и пакет ей не нужны: если файла базы
+нет, она поднимает базу из Parquet по SQL из `sql/`:
 
 ```bash
 make venv && make notebook
@@ -93,6 +94,7 @@ src/mintrans_stats/       пакет Python, команда mintrans-stats
   extract/                распаковка архивов, doc → docx, таблицы и текст из docx и pdf
   normalize/              длинный формат, ключевые ряды, сверки
   database.py             база DuckDB и Parquet
+  sql/                    схема, представления и описания таблиц базы (SQL)
   cli.py                  mintrans-stats {check|crawl|download|validate|extract|normalize|build-db}
 data/
   files/{документ}/{файл}.{ext}   исходные файлы выпусков, как пришли с сайта

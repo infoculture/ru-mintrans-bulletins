@@ -1,0 +1,27 @@
+-- Описания таблиц, столбцов и представлений; выполнять после schema.sql и views.sql.
+COMMENT ON TABLE issues IS 'Выпуски бюллетеня: один документ сайта — один выпуск за период нарастающим итогом';
+COMMENT ON COLUMN issues.report_period IS 'Период выпуска: 2025-01..09 — январь–сентябрь 2025';
+COMMENT ON COLUMN issues.in_section IS 'Выпуск есть в разделе «Статистика» (иначе найден поиском по сайту)';
+COMMENT ON TABLE files IS 'Файлы выпусков (doc, docx, pdf, rar), скачанные с сайта';
+COMMENT ON COLUMN files.site_type IS 'Тип файла по карточке документа на сайте';
+COMMENT ON COLUMN files.detected_type IS 'Тип файла по содержимому';
+COMMENT ON TABLE source_tables IS 'Таблицы, извлечённые из файлов; CSV лежит в data/tables';
+COMMENT ON COLUMN source_tables.member IS 'Файл внутри архива, если таблица из архива';
+COMMENT ON COLUMN source_tables.location IS 'Место таблицы: page N (pdf) или body (docx)';
+COMMENT ON TABLE indicators IS 'Ключевые показатели: перевозки и обороты пассажиров и грузов';
+COMMENT ON TABLE transport_modes IS 'Виды транспорта; mode_group: total — итоги, mintrans — отрасли Минтранса, other — прочие ведомства';
+COMMENT ON TABLE table_values IS 'Каждая числовая ячейка каждой таблицы всех выпусков';
+COMMENT ON COLUMN table_values.topic IS 'Ключевой показатель, если таблица сводная по видам транспорта';
+COMMENT ON COLUMN table_values.mode IS 'Вид транспорта по подписи строки';
+COMMENT ON COLUMN table_values.measure IS 'value — значение, percent — столбец «в % к …»';
+COMMENT ON COLUMN table_values.col_period IS 'Период столбца по шапке: 2024, 2025-01..09';
+COMMENT ON COLUMN table_values.value_raw IS 'Текст ячейки как в источнике';
+COMMENT ON COLUMN table_values.value_note IS 'Сноска при числе: 2) или *';
+COMMENT ON TABLE core_observations IS 'Ключевые показатели из всех выпусков, с повторами одного периода';
+COMMENT ON COLUMN core_observations.flags IS 'unit_suspect — значение в 100+ раз больше медианы ряда';
+COMMENT ON TABLE core_series IS 'Ключевые ряды без повторов: значение из самого позднего выпуска';
+COMMENT ON TABLE checks IS 'Проверки: total_vs_sum — итог против суммы видов; revision — пересмотры между выпусками; unit_suspect — вероятно другая единица';
+COMMENT ON TABLE build_info IS 'Сведения о сборке базы';
+COMMENT ON VIEW series IS 'core_series с названиями показателей и видов транспорта';
+COMMENT ON VIEW annual_series IS 'Годовые значения ключевых рядов (январь–декабрь)';
+COMMENT ON VIEW values_with_source IS 'table_values с выпуском, файлом и ссылками на источник';
